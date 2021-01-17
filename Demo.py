@@ -3,15 +3,25 @@ import os
 from glob import glob
 from pathlib import Path
 import shutil
+import subprocess
+import time
 
 pathUSBDrive = "/media/pi/"
 pathPhone = "/run/user/1000/gvfs/"
-uploadFolder = "/Internal shared storage/APKUpdaterFolder/"
+uploadFolder = "/Internal shared storage/"
+apkUpdaterFolder = "APKUpdaterFolder/"
 connectedPhoneDir = ""
+phoneStorageNameList = ["/Internal shared storage/","/Internal storage/"]
 selectedFile = ""
 
 def setFileNameLabel():
-    fileNameLabel.value = "Changed!"
+    count = 0
+    apkFileList.clear()
+    for path in Path('/home/pi/Desktop/APKFiles').rglob('*.apk'):
+        apkFullPathList[os.path.basename(path)] = path
+        apkFileList.insert(count,os.path.basename(path))
+        count = count + 1
+    usbWindow.show(wait=True)
 
 def setPhoneNameLabel():
     global connectedPhoneDir
@@ -25,6 +35,7 @@ def setPhoneNameLabel():
     
 def openUsbWidow():
     count = 0
+    apkFileList.clear()
     for path in Path('/media/pi').rglob('*.apk'):
         apkFullPathList[os.path.basename(path)] = path
         apkFileList.insert(count,os.path.basename(path))
@@ -35,26 +46,55 @@ def openUsbWidow():
 def testListSelection(value):
     global selectedFile
     selectedFile = apkFullPathList[value]
-    fileNameLabel.value = "File to upload: " + value
+    fileNameLabel.value = "File to upload: " + value[:20] #show the first 20 characters, to prevent the gui from breaking
     
 def startUploadProcess():
     global selectedFile
+    storageExists = False
+    
+    statusLabel.value = "Current Status: Starting upload!"
+    app.update()
+    
     if connectedPhoneDir == "":
         statusLabel.value = "Current Status: ERROR \n Please connect a phone first!"
         return
     
-    if not os.path.exists(connectedPhoneDir + uploadFolder):
-        os.mkdir(connectedPhoneDir + uploadFolder)
+    for storagePath in phoneStorageNameList:
+        if os.path.exists(connectedPhoneDir + storagePath):
+            storageExists = True
+            uploadFolder = storagePath
+            break
+        
+    if not storageExists:
+        statusLabel.value = "Current Status: ERROR \n Could not locate internal storage!"
+        return
+    
+    statusLabel.value = "Current Status: Checking upload directory..."
+    app.update()
+    
+    if not os.path.exists(connectedPhoneDir + uploadFolder + apkUpdaterFolder):
+        statusLabel.value = "Current Status: Creating upload directory..."
+        app.update()
+        os.mkdir(connectedPhoneDir + uploadFolder + apkUpdaterFolder)
         
     if selectedFile == "":
         statusLabel.value = "Current Status: ERROR \n Failed to locate the APK file from USB drive!"
         
+    statusLabel.value = "Current Status: Copying APK from storage to phone..."
+    app.update()
     print("Source: " + str(selectedFile) + " Dest: " + connectedPhoneDir + uploadFolder + str(os.path.basename(selectedFile))) 
-    shutil.copyfile(str(selectedFile),connectedPhoneDir + uploadFolder + str(os.path.basename(selectedFile)))
-    
-    print("adb install " + "'" + connectedPhoneDir + uploadFolder + str(os.path.basename(selectedFile)) + "'")
-    os.system("adb install " + "'" + connectedPhoneDir + uploadFolder + str(os.path.basename(selectedFile)) + "'")
-
+    shutil.copyfile(str(selectedFile),connectedPhoneDir + uploadFolder + apkUpdaterFolder + str(os.path.basename(selectedFile)))
+        
+    statusLabel.value = "Current Status: Installing APK..."
+    app.update()
+    print("adb install -r " + "'" + connectedPhoneDir + uploadFolder + str(os.path.basename(selectedFile)) + "'")
+    test = os.system("adb install -r " + "'" + connectedPhoneDir + uploadFolder + apkUpdaterFolder + str(os.path.basename(selectedFile)) + "'")
+    if test == 0:
+        statusLabel.value = "Current Status: DONE!"
+        return
+    statusLabel.value = "Current Status: ERROR! \n Failed to install APK file on the phone.\n adb return code: " + str(test)
+    #test = subprocess.check_output("adb install -r " + "'" + connectedPhoneDir + uploadFolder + apkUpdaterFolder + str(os.path.basename(selectedFile)) + "'")
+    #statusLabel.value = test
     
 
 
@@ -80,7 +120,7 @@ phoneButton = PushButton(app, command=setPhoneNameLabel,width=10,height=buttonHe
 startButton = PushButton(app, command=startUploadProcess,width=10,height=buttonHeight, text="Start upload!", grid=[1,2])
 
 #Fourth row
-progressLabel = Text(app,text="Current progress: 0%", grid=[0,3],align="left")
+#progressLabel = Text(app,text="Current progress: 0%", grid=[0,3],align="left")
 
 #Fifth row 
 statusLabel = Text(app,text="Current status: OK", grid=[0,4],align="left")
